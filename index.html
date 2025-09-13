@@ -1,119 +1,89 @@
-<!DOCTYPE html>
-<html lang="en-us">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Unity WebGL Player | Lizan</title>
-    <link rel="shortcut icon" href="TemplateData/favicon.ico">
-    <link rel="stylesheet" href="TemplateData/style.css">
-  </head>
-  <body>
-    <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" width=960 height=600></canvas>
-      <div id="unity-loading-bar">
-        <div id="unity-logo"></div>
-        <div id="unity-progress-bar-empty">
-          <div id="unity-progress-bar-full"></div>
-        </div>
-      </div>
-      <div id="unity-warning"> </div>
-      <div id="unity-footer">
-        <div id="unity-webgl-logo"></div>
-        <div id="unity-fullscreen-button"></div>
-        <div id="unity-build-title">Lizan</div>
-      </div>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CF Worker Connectivity Test</title>
+  <style>
+    :root { font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial; }
+    body { margin: 0; background: #0f172a; color: #e5e7eb; display: grid; place-items: center; min-height: 100vh; }
+    .card { width: min(680px, 92vw); background: #111827; border: 1px solid #374151; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    h1 { font-size: 1.25rem; margin: 0 0 12px; }
+    p.hint { margin-top: 0; color: #9ca3af; }
+    label { display: block; margin: 14px 0 6px; color: #cbd5e1; }
+    input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #334155; background: #0b1220; color: #e5e7eb; }
+    .row { display: flex; gap: 8px; margin-top: 14px; }
+    button { cursor: pointer; padding: 10px 14px; border-radius: 10px; border: 1px solid #22c55e; background: #16a34a; color: #052e16; font-weight: 700; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .out { margin-top: 16px; padding: 12px; border-radius: 10px; background: #0b1220; border: 1px dashed #475569; min-height: 2.5rem; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: #34d399; }
+    .err { color: #fca5a5; }
+    small { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Cloudflare Worker Connectivity Test</h1>
+    <p class="hint">Enter your Worker URL and shared key. We’ll POST to <code>/magic</code> and display the response.</p>
+
+    <label for="url">Worker URL (include <code>/magic</code>)</label>
+    <input id="url" placeholder="https://<your-worker>.workers.dev/magic" />
+
+    <label for="key">Key</label>
+    <input id="key" type="password" placeholder="YOUR_KEY" />
+
+    <div class="row">
+      <button id="go">Send</button>
+      <button id="ping" title="Sends a JSON POST with your key and shows the result.">Ping</button>
     </div>
-    <script>
-      var container = document.querySelector("#unity-container");
-      var canvas = document.querySelector("#unity-canvas");
-      var loadingBar = document.querySelector("#unity-loading-bar");
-      var progressBarFull = document.querySelector("#unity-progress-bar-full");
-      var fullscreenButton = document.querySelector("#unity-fullscreen-button");
-      var warningBanner = document.querySelector("#unity-warning");
 
-      // Shows a temporary message banner/ribbon for a few seconds, or
-      // a permanent error message on top of the canvas if type=='error'.
-      // If type=='warning', a yellow highlight color is used.
-      // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
-      function unityShowBanner(msg, type) {
-        function updateBannerVisibility() {
-          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
-        }
-        var div = document.createElement('div');
-        div.innerHTML = msg;
-        warningBanner.appendChild(div);
-        if (type == 'error') div.style = 'background: red; padding: 10px;';
-        else {
-          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
-          setTimeout(function() {
-            warningBanner.removeChild(div);
-            updateBannerVisibility();
-          }, 5000);
-        }
-        updateBannerVisibility();
-      }
+    <div class="out" id="out"></div>
+    <small>Tip: For production, lock CORS to your Pages origin instead of <code>*</code>.</small>
+  </div>
 
-      var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/Shengwxnw.github.io.loader.js";
-      var config = {
-        dataUrl: buildUrl + "/Shengwxnw.github.io.data",
-        frameworkUrl: buildUrl + "/Shengwxnw.github.io.framework.js",
-        codeUrl: buildUrl + "/Shengwxnw.github.io.wasm",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "DefaultCompany",
-        productName: "Lizan",
-        productVersion: "1.0",
-        showBanner: unityShowBanner,
-      };
+  <script>
+    const $ = (id) => document.getElementById(id);
 
-      // By default Unity keeps WebGL canvas render target size matched with
-      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
-      // Set this to false if you want to decouple this synchronization from
-      // happening inside the engine, and you would instead like to size up
-      // the canvas DOM size and WebGL render target sizes yourself.
-      // config.matchWebGLToCanvasSize = false;
+    async function call() {
+      const url = $('url').value.trim();
+      const key = $('key').value;
+      const out = $('out');
 
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
+      if (!url) { out.textContent = 'Please enter the full Worker endpoint URL (ending with /magic).'; return; }
+      if (!key) { out.textContent = 'Please enter a key.'; return; }
 
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
-        container.className = "unity-mobile";
-        canvas.className = "unity-mobile";
-
-        // To lower canvas resolution on mobile devices to gain some
-        // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
-
-        unityShowBanner('WebGL builds are not supported on mobile devices.');
-      } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
-      }
-
-      loadingBar.style.display = "block";
-
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          progressBarFull.style.width = 100 * progress + "%";
-        }).then((unityInstance) => {
-          loadingBar.style.display = "none";
-          fullscreenButton.onclick = () => {
-            unityInstance.SetFullscreen(1);
-          };
-        }).catch((message) => {
-          alert(message);
+      $('go').disabled = true; $('ping').disabled = true; out.textContent = 'Sending…';
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key })
         });
-      };
-      document.body.appendChild(script);
-    </script>
-  </body>
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch (e) { data = { ok:false, error:'Non-JSON response', raw:text }; }
+
+        if (res.ok && data?.ok) {
+          out.innerHTML = `<span class="ok">✅ Success!</span> Magic word: <strong>${String(data.magic)}</strong>`;
+        } else {
+          out.innerHTML = `<span class="err">❌ Error ${res.status}</span> ${data?.error ?? text}`;
+        }
+      } catch (e) {
+        out.innerHTML = `<span class="err">❌ Network error</span> ${e?.message ?? e}`;
+      } finally {
+        $('go').disabled = false; $('ping').disabled = false;
+      }
+    }
+
+    $('go').addEventListener('click', call);
+    $('ping').addEventListener('click', call);
+
+    // Optional: persist last used URL in localStorage
+    (function init() {
+      const last = localStorage.getItem('cf_magic_url');
+      if (last) $('url').value = last;
+      $('url').addEventListener('change', () => localStorage.setItem('cf_magic_url', $('url').value.trim()));
+    })();
+  </script>
+</body>
 </html>
