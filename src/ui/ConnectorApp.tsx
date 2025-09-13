@@ -90,28 +90,37 @@ const ConnectorApp: React.FC = () => {
 
   async function navigateCurrent(url: string, method: 'GET' | 'POST' | 'HEAD' = 'GET') {
     if (!active) return;
-    const resp = await active.page.navigate(url, { method });
-    const ct = resp.headers.get('Content-Type') || '';
-    const newState: Partial<SandboxState> = { lastContentType: ct, renderedHtml: undefined, renderedText: undefined };
-    if (ct.includes('text/html')) {
-      const html = await resp.text();
-      newState.renderedHtml = html;
-    } else if (ct.includes('application/json')) {
-      try {
-        const text = await resp.text();
-        newState.renderedText = JSON.stringify(JSON.parse(text), null, 2);
-      } catch {
+    try {
+      const resp = await active.page.navigate(url, { method });
+      const ct = resp.headers.get('Content-Type') || '';
+      const newState: Partial<SandboxState> = { lastContentType: ct, renderedHtml: undefined, renderedText: undefined };
+      if (ct.includes('text/html')) {
+        const html = await resp.text();
+        newState.renderedHtml = html;
+      } else if (ct.includes('application/json')) {
+        try {
+          const text = await resp.text();
+          newState.renderedText = JSON.stringify(JSON.parse(text), null, 2);
+        } catch {
+          newState.renderedText = await resp.text();
+        }
+      } else {
         newState.renderedText = await resp.text();
       }
-    } else {
-      newState.renderedText = await resp.text();
+      setSandboxes(prev => {
+        const next = new Map(prev);
+        const cur = next.get(active.page.id);
+        if (cur) next.set(active.page.id, { ...cur, ...newState });
+        return next;
+      });
+    } catch (e: any) {
+      setSandboxes(prev => {
+        const next = new Map(prev);
+        const cur = next.get(active.page.id);
+        if (cur) next.set(active.page.id, { ...cur, renderedHtml: undefined, renderedText: `Request failed: ${e?.message ?? e}` });
+        return next;
+      });
     }
-    setSandboxes(prev => {
-      const next = new Map(prev);
-      const cur = next.get(active.page.id);
-      if (cur) next.set(active.page.id, { ...cur, ...newState });
-      return next;
-    });
   }
 
   function base64url(s: string) {
