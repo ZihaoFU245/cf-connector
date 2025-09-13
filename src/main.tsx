@@ -6,8 +6,8 @@ import './styles.css';
 async function registerSW() {
   if ('serviceWorker' in navigator) {
     try {
-      const swUrl = new URL('./sw/proxy-sw.ts', import.meta.url);
-      const reg = await navigator.serviceWorker.register(swUrl, { scope: '/', type: 'module' });
+      // Use built asset from /public for production
+      const reg = await navigator.serviceWorker.register('/proxy-sw.js', { scope: '/' });
       await navigator.serviceWorker.ready;
       // Send config to SW (worker base URL)
       const workerBase = (localStorage.getItem('workerBase') || (import.meta.env.VITE_WORKER_BASE as string | undefined)) as string | undefined;
