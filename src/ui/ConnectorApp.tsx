@@ -24,7 +24,9 @@ const ConnectorApp: React.FC = () => {
   const [sandboxes, setSandboxes] = useState<Map<string, SandboxState>>(new Map());
   const [activeId, setActiveId] = useState<string>('');
   const mediaInputRef = useRef<HTMLInputElement>(null);
-  const workerBase = import.meta.env.VITE_WORKER_BASE as string | undefined;
+  const [workerBase, setWorkerBase] = useState<string | undefined>(() => {
+    return localStorage.getItem('workerBase') || (import.meta.env.VITE_WORKER_BASE as string | undefined) || undefined;
+  });
 
   // SW messages: cookie propagation per sandbox
   useEffect(() => {
@@ -46,6 +48,16 @@ const ConnectorApp: React.FC = () => {
     navigator.serviceWorker?.addEventListener('message', onMsg);
     return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
   }, []);
+
+  // Apply workerBase to SW when changed
+  useEffect(() => {
+    if (!workerBase) return;
+    const msg = { type: 'config', workerBase } as const;
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(msg);
+      navigator.serviceWorker.controller.postMessage({ type: 'warmup' });
+    }
+  }, [workerBase]);
 
   useEffect(() => {
     if (sandboxes.size === 0) {
@@ -118,11 +130,27 @@ const ConnectorApp: React.FC = () => {
     });
   }
 
+  function configureWorkerBase() {
+    const current = workerBase ?? '';
+    const next = window.prompt('Enter Cloudflare Worker Base URL (e.g. https://<sub>.workers.dev)', current || '');
+    if (next == null) return; // canceled
+    const trimmed = next.trim();
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+      alert('Please provide a valid http(s) URL.');
+      return;
+    }
+    localStorage.setItem('workerBase', trimmed);
+    setWorkerBase(trimmed || undefined);
+  }
+
   return (
     <div className="app">
       <div className="topbar">
         <div className="brand">Connector</div>
-        <div className="chip">Worker: {workerBase ?? 'not set'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="chip">Worker: {workerBase ?? 'not set'}</div>
+          <button className="btn secondary" onClick={configureWorkerBase}>Configure</button>
+        </div>
       </div>
 
       <aside className="sidebar">
@@ -191,4 +219,3 @@ Also try a media URL below to load through /p.</pre>
 };
 
 export default ConnectorApp;
-

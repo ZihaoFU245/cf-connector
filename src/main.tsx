@@ -10,7 +10,7 @@ async function registerSW() {
       const reg = await navigator.serviceWorker.register(swUrl, { scope: '/', type: 'module' });
       await navigator.serviceWorker.ready;
       // Send config to SW (worker base URL)
-      const workerBase = import.meta.env.VITE_WORKER_BASE as string | undefined;
+      const workerBase = (localStorage.getItem('workerBase') || (import.meta.env.VITE_WORKER_BASE as string | undefined)) as string | undefined;
       if (reg.active && workerBase) {
         reg.active.postMessage({ type: 'config', workerBase });
         reg.active.postMessage({ type: 'warmup' });
