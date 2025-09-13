@@ -46,6 +46,9 @@ export class SandboxPage {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      throw new Error(`Worker returned ${res.status}`);
+    }
     return res;
   }
 
@@ -55,4 +58,3 @@ export class SandboxPage {
     // no-op here; UI layer renders based on Content-Type
   }
 }
-

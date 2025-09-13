@@ -24,6 +24,8 @@ const ConnectorApp: React.FC = () => {
   const [sandboxes, setSandboxes] = useState<Map<string, SandboxState>>(new Map());
   const [activeId, setActiveId] = useState<string>('');
   const mediaInputRef = useRef<HTMLInputElement>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
+  const [urlValue, setUrlValue] = useState<string>('https://example.com');
   const [workerBase, setWorkerBase] = useState<string | undefined>(() => {
     return localStorage.getItem('workerBase') || (import.meta.env.VITE_WORKER_BASE as string | undefined) || undefined;
   });
@@ -75,6 +77,7 @@ const ConnectorApp: React.FC = () => {
     next.set(id, { page });
     setSandboxes(next);
     setActiveId(id);
+    setUrlValue(seedUrl ?? 'https://example.com');
   }
 
   function handleRemove(id: string) {
@@ -180,13 +183,15 @@ const ConnectorApp: React.FC = () => {
             <div className="urlbar">
               <button className="btn secondary" onClick={() => navigateCurrent(active.page.history.back(), 'GET')}>Back</button>
               <button className="btn secondary" onClick={() => navigateCurrent(active.page.history.forward(), 'GET')}>Forward</button>
-              <input type="text" defaultValue={active.page.homeUrl} placeholder="https://example.com" onKeyDown={(e) => {
-                if (e.key === 'Enter') navigateCurrent((e.target as HTMLInputElement).value);
-              }} />
-              <button className="btn" onClick={(e) => {
-                const el = (e.currentTarget.previousSibling?.previousSibling as HTMLInputElement);
-                if (el?.value) navigateCurrent(el.value);
-              }}>Go</button>
+              <input
+                ref={urlInputRef}
+                type="text"
+                value={urlValue}
+                placeholder="https://example.com"
+                onChange={(e) => setUrlValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') navigateCurrent(urlValue); }}
+              />
+              <button className="btn" onClick={() => { if (urlValue) navigateCurrent(urlValue); }}>Go</button>
             </div>
 
             <section className="viewer">
