@@ -1,9 +1,3 @@
-export type SandboxSettings = {
-  sessionId: string; // sid
-  corsMode: 'pinned' | 'star';
-  rewriteMode: 'auto' | 'off';
-};
-
 import { CookieStore } from './CookieStore';
 import { UrlHistory } from './UrlHistory';
 
@@ -43,7 +37,6 @@ export class SandboxPage {
   homeUrl: string;
   cookieStore: CookieStore;
   history: UrlHistory;
-  settings: SandboxSettings;
 
   constructor(opts: { id: string; title: string; homeUrl: string; history: UrlHistory; cookieStore: CookieStore }) {
     this.id = opts.id;
@@ -51,10 +44,9 @@ export class SandboxPage {
     this.homeUrl = opts.homeUrl;
     this.history = opts.history;
     this.cookieStore = opts.cookieStore;
-    this.settings = { sessionId: opts.id, corsMode: 'pinned', rewriteMode: 'off' };
   }
 
-  async navigate(target: string, init?: Init): Promise<DispatchResult> {
+  async navigate(target: string, init: Init | undefined, workerBase: string): Promise<DispatchResult> {
     const url = target || this.homeUrl;
     this.history.push(url);
     const payload = {
@@ -71,16 +63,36 @@ export class SandboxPage {
         },
       ],
     };
-    // Use same-origin /dispatch, Service Worker rewrites to Worker base
-    const res = await fetch('/dispatch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(`Worker returned ${res.status}`);
+    const body = JSON.stringify(payload);
+    const tried = new Set<string>();
+
+    const attempt = async (endpoint: string): Promise<DispatchEnvelope> => {
+      tried.add(endpoint);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        mode: endpoint.startsWith('http') ? 'cors' : undefined,
+        credentials: 'omit',
+        redirect: 'follow',
+      });
+      if (!res.ok) {
+        throw new Error(`Worker returned ${res.status}`);
+      }
+      this.cookieStore.applyFromHeader(res.headers.get('x-set-cookie'));
+      return (await res.json()) as DispatchEnvelope;
+    };
+
+    let json: DispatchEnvelope;
+    try {
+      json = await attempt('/dispatch');
+    } catch (err) {
+      const endpoint = new URL('/dispatch', workerBase).toString();
+      if (tried.has(endpoint)) {
+        throw err;
+      }
+      json = await attempt(endpoint);
     }
-    const json = (await res.json()) as DispatchEnvelope;
     const entry = json.results?.[0];
     if (!entry) {
       throw new Error('Empty dispatch response');
@@ -92,11 +104,5 @@ export class SandboxPage {
       this.history.replace(entry.finalUrl);
     }
     return entry;
-  }
-
-  // renderDocument is handled in UI; kept for parity
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  renderDocument(_resp: Response): void {
-    // no-op here; UI layer renders based on Content-Type
   }
 }

@@ -89,7 +89,7 @@ function headerLookup(headers: Record<string, string> | undefined, name: string)
 const ConnectorApp: React.FC = () => {
   const [sandboxes, setSandboxes] = useState<Map<string, SandboxState>>(new Map());
   const [activeId, setActiveId] = useState<string>('');
-  const [urlValue, setUrlValue] = useState<string>('https://example.com');
+  const [urlValue, setUrlValue] = useState<string>('');
   const [workerBase, setWorkerBase] = useState<string | undefined>(() => {
     const stored = localStorage.getItem('workerBase');
     if (stored) {
@@ -103,6 +103,22 @@ const ConnectorApp: React.FC = () => {
   useEffect(() => { sandboxesRef.current = sandboxes; }, [sandboxes]);
   const activeIdRef = useRef(activeId);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  const workerBaseRef = useRef(workerBase);
+  useEffect(() => { workerBaseRef.current = workerBase; }, [workerBase]);
+
+  useEffect(() => {
+    const activeSandbox = sandboxes.get(activeId);
+    if (!activeSandbox) {
+      setUrlValue('');
+      return;
+    }
+    const nextUrl =
+      activeSandbox.document?.finalUrl ||
+      activeSandbox.page.history.current() ||
+      activeSandbox.page.homeUrl ||
+      '';
+    setUrlValue(nextUrl ? normalizeUrlInput(nextUrl) : '');
+  }, [activeId, sandboxes]);
 
   // SW messages: cookie propagation per sandbox
   useEffect(() => {
@@ -141,7 +157,7 @@ const ConnectorApp: React.FC = () => {
     const id = uuid();
     const history = new UrlHistory();
     const cookieStore = new CookieStore(id);
-    const homeUrl = seedUrl ? normalizeUrlInput(seedUrl) || 'https://example.com' : 'https://example.com';
+    const homeUrl = seedUrl ? normalizeUrlInput(seedUrl) : '';
     const page = new SandboxPage({ id, title: 'New Sandbox', homeUrl, history, cookieStore });
     setSandboxes(prev => {
       const next = new Map(prev);
@@ -150,7 +166,7 @@ const ConnectorApp: React.FC = () => {
       return next;
     });
     setActiveId(id);
-    setUrlValue(homeUrl);
+    setUrlValue(homeUrl ?? '');
     return id;
   }, []);
 
@@ -162,25 +178,45 @@ const ConnectorApp: React.FC = () => {
       if (activeIdRef.current === id) {
         const first = next.keys().next().value ?? '';
         setActiveId(first);
+        const firstState = first ? next.get(first) : undefined;
+        setUrlValue(firstState?.document?.finalUrl || firstState?.page.homeUrl || '');
       }
       return next;
     });
   }, []);
 
-  const sandboxesCount = sandboxes.size;
-  useEffect(() => {
-    if (sandboxesCount === 0) {
-      handleAdd('https://example.com');
-    }
-  }, [sandboxesCount, handleAdd]);
-
   const navigateSandbox = useCallback(async (sandboxId: string, url: string, init?: NavigateInit) => {
     const map = sandboxesRef.current;
     const sb = map.get(sandboxId);
     if (!sb) return;
+    const base = workerBaseRef.current;
+    if (!base) {
+      setSandboxes(prev => {
+        const next = new Map(prev);
+        const current = next.get(sandboxId);
+        if (current) {
+          next.set(sandboxId, { ...current, error: 'Configure a Worker base URL before navigating.', isLoading: false });
+        }
+        sandboxesRef.current = next;
+        return next;
+      });
+      return;
+    }
     const input = url?.trim() || sb.page.homeUrl;
     const normalizedTarget = normalizeUrlInput(input) || sb.page.homeUrl;
     const target = schemePrefix.test(normalizedTarget) ? normalizedTarget : sb.page.homeUrl;
+    if (!target) {
+      setSandboxes(prev => {
+        const next = new Map(prev);
+        const current = next.get(sandboxId);
+        if (current) {
+          next.set(sandboxId, { ...current, error: 'Enter a valid URL to navigate.', isLoading: false });
+        }
+        sandboxesRef.current = next;
+        return next;
+      });
+      return;
+    }
     setSandboxes(prev => {
       const next = new Map(prev);
       const current = next.get(sandboxId);
@@ -191,7 +227,7 @@ const ConnectorApp: React.FC = () => {
       return next;
     });
     try {
-      const result = await sb.page.navigate(target, init);
+      const result = await sb.page.navigate(target, init, base);
       const finalUrl = result.finalUrl || target;
       const contentType = headerLookup(result.headers, 'content-type') || '';
       const doc: SandboxDocument = {
@@ -294,6 +330,7 @@ const ConnectorApp: React.FC = () => {
     if (normalized) {
       setUrlValue(prev => (prev === normalized ? prev : normalized));
     }
+    if (!target) return;
     navigateSandbox(active.page.id, target, { method });
   }, [active, navigateSandbox]);
 
@@ -332,7 +369,7 @@ const ConnectorApp: React.FC = () => {
       </div>
 
       <aside className="sidebar">
-        <button className="btn" onClick={() => handleAdd('https://example.com')}>New Sandbox</button>
+        <button className="btn" onClick={() => handleAdd()}>New Sandbox</button>
         <div className="sandboxes">
           {Array.from(sandboxes.values()).map(s => (
             <div key={s.page.id} className={`sandbox-item ${activeId === s.page.id ? 'active' : ''}`} onClick={() => setActiveId(s.page.id)}>
@@ -344,7 +381,7 @@ const ConnectorApp: React.FC = () => {
       </aside>
 
       <main className="main">
-        {active && (
+        {active ? (
           <>
             <div className="urlbar">
               <button className="btn secondary" onClick={() => navigateActive(active.page.history.back(), 'GET')}>Back</button>
@@ -421,6 +458,10 @@ const ConnectorApp: React.FC = () => {
               ) : null}
             </section>
           </>
+        ) : (
+          <div className="empty-state">
+            <p>No sandbox open. Create one to start browsing.</p>
+          </div>
         )}
       </main>
     </div>
