@@ -238,20 +238,29 @@ const ConnectorApp: React.FC = () => {
         note: result.body?.note,
       };
 
-      if (result.body?.encoding === 'text' && typeof result.body.data === 'string' && contentType.includes('text/html')) {
-        const prepared = prepareSandboxDocument(result.body.data, { baseUrl: finalUrl, sandboxId, frameId: sandboxId });
-        doc.html = prepared.html;
-        if (prepared.title) {
-          sb.page.title = prepared.title;
+      const bodyEncoding = result.body?.encoding;
+      const bodyData = result.body?.data;
+      const lowerType = contentType.toLowerCase();
+      const isHtmlType = lowerType.includes('text/html') || lowerType.includes('application/xhtml+xml');
+
+      if (bodyEncoding === 'text' && typeof bodyData === 'string') {
+        const snippet = bodyData.slice(0, 512).trimStart();
+        const looksHtml = isHtmlType || /^<!doctype/i.test(snippet) || /^<html[\s>]/i.test(snippet) || /^<head[\s>]/i.test(snippet) || /^<body[\s>]/i.test(snippet);
+        if (looksHtml) {
+          const prepared = prepareSandboxDocument(bodyData, { baseUrl: finalUrl, sandboxId, frameId: sandboxId });
+          doc.html = prepared.html;
+          if (prepared.title) {
+            sb.page.title = prepared.title;
+          }
+        } else {
+          doc.text = bodyData;
         }
-      } else if (result.body?.encoding === 'text' && typeof result.body.data === 'string') {
-        doc.text = result.body.data;
-      } else if (result.body?.encoding === 'json') {
-        doc.text = JSON.stringify(result.body.data, null, 2);
-      } else if (result.body?.encoding === 'base64' && typeof result.body.data === 'string') {
+      } else if (bodyEncoding === 'json') {
+        doc.text = JSON.stringify(bodyData, null, 2);
+      } else if (bodyEncoding === 'base64' && typeof bodyData === 'string') {
         doc.text = '[binary payload omitted]';
-      } else if (typeof result.body?.data !== 'undefined') {
-        doc.text = String(result.body.data);
+      } else if (typeof bodyData !== 'undefined') {
+        doc.text = String(bodyData);
       } else if (!result.body && !result.ok) {
         doc.text = result.error || `Request failed with status ${result.status}`;
       }
