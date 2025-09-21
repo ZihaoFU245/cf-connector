@@ -4,6 +4,46 @@ import { UrlHistory } from '../app/UrlHistory';
 import { CookieStore } from '../app/CookieStore';
 import { prepareSandboxDocument } from '../app/sandboxDom';
 
+const schemePrefix = /^[a-zA-Z][a-zA-Z0-9+\-.]*:/;
+
+function normalizeUrlInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`;
+  }
+  if (trimmed.startsWith('/') || trimmed.startsWith('?') || trimmed.startsWith('#')) {
+    return trimmed;
+  }
+  if (schemePrefix.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
+
+type SandboxFrameProps = Omit<React.IframeHTMLAttributes<HTMLIFrameElement>, 'src' | 'srcDoc'> & {
+  html: string;
+};
+
+const SandboxFrame = React.forwardRef<HTMLIFrameElement, SandboxFrameProps>(({ html, ...iframeProps }, ref) => {
+  const blobUrl = useMemo(() => {
+    const blob = new Blob([html], { type: 'text/html' });
+    return URL.createObjectURL(blob);
+  }, [html]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [blobUrl]);
+
+  return <iframe {...iframeProps} ref={ref} src={blobUrl} />;
+});
+
+SandboxFrame.displayName = 'SandboxFrame';
+
 function uuid(): string {
   // RFC4122 v4-ish
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -51,7 +91,12 @@ const ConnectorApp: React.FC = () => {
   const [activeId, setActiveId] = useState<string>('');
   const [urlValue, setUrlValue] = useState<string>('https://example.com');
   const [workerBase, setWorkerBase] = useState<string | undefined>(() => {
-    return localStorage.getItem('workerBase') || (import.meta.env.VITE_WORKER_BASE as string | undefined) || undefined;
+    const stored = localStorage.getItem('workerBase');
+    if (stored) {
+      return normalizeUrlInput(stored) || undefined;
+    }
+    const envBase = import.meta.env.VITE_WORKER_BASE as string | undefined;
+    return envBase ? normalizeUrlInput(envBase) || undefined : undefined;
   });
 
   const sandboxesRef = useRef(sandboxes);
@@ -96,7 +141,8 @@ const ConnectorApp: React.FC = () => {
     const id = uuid();
     const history = new UrlHistory();
     const cookieStore = new CookieStore(id);
-    const page = new SandboxPage({ id, title: 'New Sandbox', homeUrl: seedUrl ?? 'https://example.com', history, cookieStore });
+    const homeUrl = seedUrl ? normalizeUrlInput(seedUrl) || 'https://example.com' : 'https://example.com';
+    const page = new SandboxPage({ id, title: 'New Sandbox', homeUrl, history, cookieStore });
     setSandboxes(prev => {
       const next = new Map(prev);
       next.set(id, { page });
@@ -104,7 +150,7 @@ const ConnectorApp: React.FC = () => {
       return next;
     });
     setActiveId(id);
-    setUrlValue(seedUrl ?? 'https://example.com');
+    setUrlValue(homeUrl);
     return id;
   }, []);
 
@@ -132,7 +178,9 @@ const ConnectorApp: React.FC = () => {
     const map = sandboxesRef.current;
     const sb = map.get(sandboxId);
     if (!sb) return;
-    const target = url?.trim() || sb.page.homeUrl;
+    const input = url?.trim() || sb.page.homeUrl;
+    const normalizedTarget = normalizeUrlInput(input) || sb.page.homeUrl;
+    const target = schemePrefix.test(normalizedTarget) ? normalizedTarget : sb.page.homeUrl;
     setSandboxes(prev => {
       const next = new Map(prev);
       const current = next.get(sandboxId);
@@ -182,7 +230,7 @@ const ConnectorApp: React.FC = () => {
         return next;
       });
       if (activeIdRef.current === sandboxId) {
-        setUrlValue(finalUrl);
+        setUrlValue(normalizeUrlInput(finalUrl));
       }
     } catch (e: any) {
       setSandboxes(prev => {
@@ -240,7 +288,13 @@ const ConnectorApp: React.FC = () => {
 
   const navigateActive = useCallback((url: string, method: 'GET' | 'POST' | 'HEAD' = 'GET') => {
     if (!active) return;
-    navigateSandbox(active.page.id, url, { method });
+    const trimmed = url?.trim() ?? '';
+    const normalized = trimmed ? normalizeUrlInput(trimmed) : '';
+    const target = normalized || trimmed;
+    if (normalized) {
+      setUrlValue(prev => (prev === normalized ? prev : normalized));
+    }
+    navigateSandbox(active.page.id, target, { method });
   }, [active, navigateSandbox]);
 
   const cookieEntries = useMemo(() => {
@@ -253,12 +307,18 @@ const ConnectorApp: React.FC = () => {
     const next = window.prompt('Enter Cloudflare Worker Base URL (e.g. https://<sub>.workers.dev)', current || '');
     if (next == null) return; // canceled
     const trimmed = next.trim();
-    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+    if (!trimmed) {
+      localStorage.removeItem('workerBase');
+      setWorkerBase(undefined);
+      return;
+    }
+    const normalized = normalizeUrlInput(trimmed);
+    if (!/^https?:\/\//i.test(normalized)) {
       alert('Please provide a valid http(s) URL.');
       return;
     }
-    localStorage.setItem('workerBase', trimmed);
-    setWorkerBase(trimmed || undefined);
+    localStorage.setItem('workerBase', normalized);
+    setWorkerBase(normalized);
   }
 
   return (
@@ -305,13 +365,13 @@ const ConnectorApp: React.FC = () => {
                 {active.isLoading ? (
                   <div className="loading">Loading…</div>
                 ) : active.document?.html ? (
-                  <iframe
+                  <SandboxFrame
                     key={active.document.finalUrl ?? active.page.id}
                     ref={iframeRef}
                     title="document"
                     sandbox="allow-scripts allow-forms"
-                    srcDoc={active.document.html}
                     allow="fullscreen"
+                    html={active.document.html}
                   />
                 ) : active.document?.text ? (
                   <pre>{active.document.text}</pre>
