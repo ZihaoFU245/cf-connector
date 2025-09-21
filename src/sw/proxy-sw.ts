@@ -20,8 +20,10 @@ ctx.addEventListener('message', (event) => {
   if (data.type === 'warmup') {
     const wb = (ctx as any).__WORKER_BASE as string | undefined;
     if (wb) {
-      // warm a trivial GET to establish TLS/H2
-      event.waitUntil(fetch(wb + '/p?sid=_warm&u=' + encodeURIComponent(b64url('https://example.com'))).catch(() => undefined));
+      const warmUrl = wb.endsWith('/') ? wb : `${wb}/`;
+      event.waitUntil(
+        fetch(warmUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => undefined)
+      );
     }
   }
 });

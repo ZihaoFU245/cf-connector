@@ -18,7 +18,8 @@ self.addEventListener('message', (event) => {
   if (data.type === 'warmup') {
     const wb = self.__WORKER_BASE;
     if (wb) {
-      event.waitUntil(fetch(wb + '/p?sid=_warm&u=' + encodeURIComponent(b64url('https://example.com'))).catch(() => undefined));
+      const warmUrl = wb.endsWith('/') ? wb : `${wb}/`;
+      event.waitUntil(fetch(warmUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => undefined));
     }
   }
 });

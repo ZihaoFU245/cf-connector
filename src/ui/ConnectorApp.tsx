@@ -357,7 +357,23 @@ const ConnectorApp: React.FC = () => {
                 onKeyDown={(e) => { if (e.key === 'Enter') navigateActive(urlValue); }}
               />
               <button className="btn" onClick={() => { if (urlValue) navigateActive(urlValue); }}>Go</button>
-              <button className="btn secondary" onClick={() => { if (iframeRef.current?.requestFullscreen) iframeRef.current.requestFullscreen().catch(() => undefined); }}>Full Screen</button>
+              <button
+                className="btn secondary"
+                onClick={() => {
+                  const frame = iframeRef.current;
+                  if (!frame) return;
+                  const request =
+                    frame.requestFullscreen?.bind(frame) ||
+                    (frame as any).webkitRequestFullscreen?.bind(frame) ||
+                    (frame as any).mozRequestFullScreen?.bind(frame) ||
+                    (frame as any).msRequestFullscreen?.bind(frame);
+                  if (request) {
+                    Promise.resolve(request()).catch(() => undefined);
+                  }
+                }}
+              >
+                Full Screen
+              </button>
             </div>
 
             <section className="viewer">
@@ -370,7 +386,8 @@ const ConnectorApp: React.FC = () => {
                     ref={iframeRef}
                     title="document"
                     sandbox="allow-scripts allow-forms"
-                    allow="fullscreen"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowFullScreen
                     html={active.document.html}
                   />
                 ) : active.document?.text ? (

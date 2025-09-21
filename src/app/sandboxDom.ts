@@ -36,6 +36,47 @@ function resolveAbsoluteUrl(ref: string | null, base: string): string | null {
   }
 }
 
+function rewriteCssUrls(css: string, base: string, sandboxId: string): string {
+  const urlPattern = /url\(\s*(['"]?)([^'"\)]+)\1\s*\)/gi;
+  const importPattern = /@import\s+(?:url\(\s*(['"]?)([^'"\)]+)\1\s*\)|(['"])([^'"\)]+)\3)/gi;
+
+  const proxifyCssRef = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('data:') || lower.startsWith('blob:') || lower.startsWith('javascript:') || lower.startsWith('#')) {
+      return null;
+    }
+    const absolute = resolveAbsoluteUrl(trimmed, base);
+    if (!absolute) return null;
+    return buildSandboxAssetUrl(sandboxId, absolute);
+  };
+
+  const rewriteUrlMatch = (_match: string, quote: string, raw: string) => {
+    const proxied = proxifyCssRef(raw);
+    if (!proxied) return _match;
+    const q = quote || '';
+    return `url(${q}${proxied}${q})`;
+  };
+
+  const rewriteImportMatch = (_match: string, q1: string, raw1: string, q2: string, raw2: string) => {
+    const raw = raw1 ?? raw2;
+    const quote = q1 || q2 || '';
+    if (!raw) return _match;
+    const proxied = proxifyCssRef(raw);
+    if (!proxied) return _match;
+    if (q1) {
+      return `@import url(${quote}${proxied}${quote})`;
+    }
+    if (q2) {
+      return `@import ${quote}${proxied}${quote}`;
+    }
+    return _match;
+  };
+
+  return css.replace(urlPattern, rewriteUrlMatch).replace(importPattern, rewriteImportMatch);
+}
+
 function encodePathname(pathname: string): string {
   const segments = pathname.split('/').map(segment => encodeURIComponent(segment));
   let joined = segments.join('/');
@@ -220,6 +261,21 @@ export function prepareSandboxDocument(html: string, options: PrepareOptions): P
     if (proxied) {
       link.setAttribute('href', proxied);
       link.removeAttribute('integrity');
+    }
+  });
+
+  doc.querySelectorAll('style').forEach(style => {
+    const text = style.textContent;
+    if (!text) return;
+    style.textContent = rewriteCssUrls(text, baseUrl, sandboxId);
+  });
+
+  doc.querySelectorAll<HTMLElement>('[style]').forEach(element => {
+    const inline = element.getAttribute('style');
+    if (!inline) return;
+    const rewritten = rewriteCssUrls(inline, baseUrl, sandboxId);
+    if (rewritten !== inline) {
+      element.setAttribute('style', rewritten);
     }
   });
 
