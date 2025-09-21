@@ -77,11 +77,23 @@ type NavigateInit = {
   headers?: Record<string, string>;
 };
 
-function headerLookup(headers: Record<string, string> | undefined, name: string): string | undefined {
-  if (!headers) return undefined;
+// Lookup a header value case-insensitively and coerce non-string payloads to a string
+function headerLookup(
+  headers: Record<string, unknown> | undefined,
+  name: string
+): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined;
   const lower = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === lower) return value;
+    if (key.toLowerCase() !== lower) continue;
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.length ? String(value[0]) : undefined;
+    if (value == null) return undefined;
+    try {
+      return String(value);
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 }
@@ -229,7 +241,7 @@ const ConnectorApp: React.FC = () => {
     try {
       const result = await sb.page.navigate(target, init, base);
       const finalUrl = result.finalUrl || target;
-      const contentType = headerLookup(result.headers, 'content-type') || '';
+      const contentType = headerLookup(result.headers as any, 'content-type') || '';
       const doc: SandboxDocument = {
         finalUrl,
         status: result.status,
